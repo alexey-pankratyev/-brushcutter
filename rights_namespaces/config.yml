@@ -1,6 +1,8 @@
 rolebindings:
-  ed-ks1: 
-    - dataplatform
-    - wtp1
-  ix-ks1:
-    - ct-wtp-dataplatform
+  cluster-context1:
+    - namespace1
+    - namespace2
+  cluster-context2:
+    - namespace1
+    - namespace2
+    - namespace3
