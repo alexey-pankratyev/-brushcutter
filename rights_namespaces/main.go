@@ -11,26 +11,26 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
+	//"reflect"
+	"gopkg.in/yaml.v2"
 )
 
-type RoleInstans struct {
-	RoleBindings map[string]interface{}
-}
+var (
+	configPath string
+    userBind = make(map[string]interface{})
+    kubeconfig *string
+    userName string
+)
 
-const userName = "test_wtp"
+
+type Bindings struct {
+	Rolebindings map[string][]string
+}
 
 
 func main() {
-	var rBind RoleInstans
-	var userBind = make(map[string]interface{})
-	var kubeconfig *string
-
-	rBind.RoleBindings = userBind
-
-	ns := []string{"wgie-wtp-dataplatform"}
-
-	rBind.RoleBindings["ed-ks1"] = ns
+	flag.StringVar(&configPath, "config", "./config.yml", "path to config file")
+	flag.StringVar(&userName,"username", "", "This parameter is required. The user name for which we'll create rolebindings")
 
 	if home := homeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -39,9 +39,23 @@ func main() {
 	}
 	flag.Parse()
 
+	if userName == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	cfgPath, err := ParseFlags()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cfg, err := NewConfig(cfgPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// create the RoleBindings from
-	for cl, ns := range rBind.RoleBindings {
+	for cl, ns := range cfg.Rolebindings {
 
 		log.Printf("Use the %s context in kubeconfig", cl)
 		config, err :=  buildConfigFromFlags(cl, *kubeconfig)
@@ -57,13 +71,11 @@ func main() {
 
 		log.Println("we create these namespaces:")
 
-		s := reflect.ValueOf(ns)
+		for _, v := range ns {
 
-		for i := 0; i < s.Len(); i++ {
+			roleBindingName := fmt.Sprintf("%v-%v", userName, v)
 
-			roleBindingName := fmt.Sprintf("%v-%v", userName, s.Index(i))
-
-			nsName := fmt.Sprintf("%v", s.Index(i))
+			nsName := fmt.Sprintf("%v", v)
 
 			_, err := clientset.RbacV1().RoleBindings(nsName).Get(roleBindingName, metav1.GetOptions{})
 
@@ -73,7 +85,7 @@ func main() {
 			}
 
 			log.Printf("Creating RoleBinding for %v in namespace %v \n in cluster %v", userName, nsName, cl)
-
+			// to setup manifest
 			roleBinding := RbacV1.RoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: roleBindingName,
@@ -117,4 +129,53 @@ func buildConfigFromFlags(context, kubeconfigPath string) (*rest.Config, error) 
 		&clientcmd.ConfigOverrides{
 			CurrentContext: context,
 		}).ClientConfig()
+}
+
+// ValidateConfigPath just makes sure, that the path provided is a file,
+// that can be read
+func ValidateConfigPath(path string) error {
+	s, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if s.IsDir() {
+		return fmt.Errorf("'%s' is a directory, not a normal file", path)
+	}
+	return nil
+}
+
+
+// NewConfig returns a new decoded Config struct
+func NewConfig(configPath string) (*Bindings, error) {
+	// Create config structure
+	config := &Bindings{}
+
+	// Open config file
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	// Init new YAML decode
+	d := yaml.NewDecoder(file)
+
+	// Start YAML decoding from file
+	if err := d.Decode(&config); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// ParseFlags will create and parse the CLI flags
+// and return the path to be used elsewhere
+func ParseFlags() (string, error) {
+
+	// Validate the path first
+	if err := ValidateConfigPath(configPath); err != nil {
+		return "", err
+	}
+
+	// Return the configuration path
+	return configPath, nil
 }

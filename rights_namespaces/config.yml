@@ -1,0 +1,6 @@
+rolebindings:
+  ed-ks1: 
+    - dataplatform
+    - wtp1
+  ix-ks1:
+    - ct-wtp-dataplatform
